@@ -1,0 +1,14 @@
+[
+  {
+    "ParameterKey": "InstanceType",
+    "ParameterValue": "t2.micro"
+  },
+  {
+    "ParameterKey": "OperatorEMail",
+    "ParameterValue": "cgs.wong+gl@gmail.com"
+  },
+  {
+    "ParameterKey": "KeyName",
+    "ParameterValue": "gl-cloudkey-us-east-1"
+  }
+]
