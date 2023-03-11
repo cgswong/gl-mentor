@@ -1,2 +1,3 @@
-# gl-mentor
-Great Learning mentor notes
+# GL Mentor
+
+This repository contains my personal notes, presentations, and content for mentoring classes.
