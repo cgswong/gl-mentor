@@ -7,7 +7,10 @@ import boto3
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key, Attr
 
-dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+dynamodb = boto3.resource(
+    "dynamodb", region_name="us-east-1", endpoint_url="http://localhost:8000"
+)
+# dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
 
 
 def create_table():
