@@ -1,20 +1,24 @@
-#******************************************************************************************
-# This lambda function will act as the backend for the loadbalancer and must be in a separate
-# target group. You need to ensure that the healthcheck is enabled, else the function does # NOTE:
-# turn healthy. Must have the path in LB as /lambda or /lambda/*
-#******************************************************************************************
+""" This lambda function will act as the backend for the load balancer and must
+    be in a separate target group. You need to ensure that the healthcheck is
+    enabled, else the function does not turn healthy.
+    NOTE: Must have the path in LB as `/lambda` or `/lambda/*`
+
+Returns:
+    string: Static response message
+"""
+
 
 def lambda_handler(event, context):
     response = {
         "statusCode": 200,
         "statusDescription": "200 OK",
         "isBase64Encoded": False,
-        "headers": {
-        "Content-Type": "text/html; charset=utf-8"
-        }
+        "headers": {"Content-Type": "text/html; charset=utf-8"},
     }
 
-    response['body'] = """
+    response[
+        "body"
+    ] = """
     <html>
         <head>
             <title>Hello Lambda!</title>
