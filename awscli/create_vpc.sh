@@ -4,7 +4,7 @@
 unset AWS_CLI_AUTO_PROMPT
 export AWS_REGION=us-east-1
 export AWS_PAGER=
-export AWS_PROFILE=gl-mentor
+export AWS_PROFILE=default
 
 echo "Create VPC and add tags"
 aws ec2 create-vpc \
