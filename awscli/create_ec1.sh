@@ -4,7 +4,7 @@
 unset AWS_CLI_AUTO_PROMPT
 export AWS_REGION=us-east-1
 export AWS_PAGER=
-export AWS_PROFILE=gl-mentor
+export AWS_PROFILE=default
 export PUB_SUBNET_ID=$1
 export SG_ID=$2
 
@@ -18,7 +18,7 @@ chmod 400 ~/.ssh/demo-cli-us-east-1-kp.pem
 
 echo "Launch EC2"
 aws ec2 run-instances \
-  --image-id ami-033b95fb8079dc481 \
+  --image-id ami-03c951bbe993ea087 \
   --count 1 \
   --instance-type t2.micro \
   --key-name demo-cli-us-east-1-kp \
