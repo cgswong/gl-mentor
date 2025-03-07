@@ -1,0 +1,6 @@
+[
+  PipelineName="WordPress-demo-pipeline",
+  S3Bucket="artifacts-us-east-1-073995604235",
+  SourceS3Key="demo/wordpress-single-instance.zip",
+  Email="cgs.wong@gmail.com"
+]

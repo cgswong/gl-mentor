@@ -1,0 +1,161 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Create an ALB with Lambda backend (demo).'
+
+# Input parameters
+Parameters:
+  ExistingVpcId:
+    Description: 'ID for existing VPC.'
+    Type: String
+  PublicSubnetId1:
+    Description: 'Subnet ID for AZ 1 for hosting the ALB.'
+    Type: String
+  PublicSubnetId2:
+    Description: 'Subnet ID for AZ 2 for hosting the ALB.'
+    Type: String
+
+# Resources to be created
+Resources:
+  # ALB resources (ALB, listener, target group, security group)
+  LambdaAlbSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'Allow HTTP traffic to backend'
+      VpcId: !Ref ExistingVpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '0.0.0.0/0'
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 0
+          CidrIp: '0.0.0.0/0'
+
+  LambdaAlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: 'internet-facing'
+      SecurityGroups:
+        - !Ref LambdaAlbSecurityGroup
+      Subnets:
+        - !Ref PublicSubnetId1
+        - !Ref PublicSubnetId2
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-alb'
+
+  LambdaAlbTargetGroup1:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: false
+      TargetType: lambda
+      Targets:
+        - Id: !GetAtt LambdaFunction.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-alb-tg1'
+        - Key: env
+          Value: 'test'
+
+  LambdaAlbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !GetAtt LambdaAlb.LoadBalancerArn
+      Port: 80
+      Protocol: 'HTTP'
+      DefaultActions:
+        - Type: 'forward'
+          TargetGroupArn: !GetAtt LambdaAlbTargetGroup1.TargetGroupArn
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !GetAtt LambdaAlbTargetGroup1.TargetGroupArn
+
+  LambdaAlbAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: !Sub 'Monitor ALB for ${LambdaAlb}'
+      Namespace: 'AWS/ApplicationELB'
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt LambdaAlb.LoadBalancerFullName
+        - Name: TargetGroup
+          Value: !GetAtt LambdaAlbTargetGroup1.TargetGroupFullName
+      MetricName: UnHealthyHostCount
+      Period: 60
+      Statistic: Average
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      EvaluationPeriods: 1
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-alb-alarm'
+
+  # Backend Lambda resources (function, permission, and role)
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: 'index.handler'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: 128
+      Runtime: 'python3.13'
+      Timeout: 25
+      Code:
+        ZipFile: !Sub |
+          import json
+
+          def handler(event, context):
+            response = {
+              "statusCode": 200,
+              "statusDescription": "200 OK",
+              "isBase64Encoded": False,
+              "headers": {
+                "Content-Type": "text/html; charset=utf-8"
+              }
+            }
+
+            response['body'] = """<html>
+            <head>
+            <title>Hello World!</title>
+            <style>
+            html, body {
+              margin: 0; padding: 0;
+              font-family: arial; font-weight: 700; font-size: 3em;
+              text-align: center;
+            }
+            </style>
+            </head>
+            <body>
+            <p>Hello World from Lambda</p>
+            </body>
+            </html>"""
+            return response
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Action: 'lambda:InvokeFunction'
+      Principal: elasticloadbalancing.amazonaws.com
+
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AWSLambdaExecute'
+
+# Useful outputs
+Outputs:
+  AlbSecurityGroupId:
+    Description: 'Security Group for the ALB.'
+    Value: !Ref LambdaAlbSecurityGroup
+  LambdaAlbDNSName:
+    Description: 'DNS name for the ALB with Lambda backend.'
+    Value: !GetAtt LambdaAlb.DNSName

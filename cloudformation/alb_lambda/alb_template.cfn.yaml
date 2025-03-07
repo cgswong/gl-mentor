@@ -1,0 +1,193 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Create an ALB with Lambda and EC2 backend as a demo.'
+
+# Input parameters
+Parameters:
+  VpcId:
+    Type: 'AWS::EC2::VPC::Id'
+    Description: 'VPC ID'
+
+  Subnet1:
+    Type: 'AWS::EC2::Subnet::Id'
+    Description: 'Subnet ID 1'
+
+  Subnet2:
+    Type: 'AWS::EC2::Subnet::Id'
+    Description: 'Subnet ID 2'
+
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+
+# Resources to be created
+Resources:
+  # Create an ALB
+  MyALB:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Name: 'My-Application-ALB'
+      Subnets:
+        - !Ref Subnet1
+        - !Ref Subnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Scheme: 'internet-facing'
+      Type: 'application'
+
+  # Create a Security Group for the ALB
+  ALBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'Security Group for ALB'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: 'tcp'
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: '0.0.0.0/0'
+
+  # Create a Target Group for EC2 Instances
+  EC2TargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 'EC2-Target-Group'
+      Protocol: 'HTTP'
+      Port: 80
+      TargetType: 'instance'
+      VpcId: !Ref VpcId
+      HealthCheckPath: '/'
+      HealthCheckProtocol: 'HTTP'
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 2
+
+  # Create an EC2 Instance with Apache
+  MyEC2Instance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: 't2.micro'
+      SubnetId: !Ref Subnet1
+      SecurityGroups:
+        - !Ref EC2SecurityGroup
+      VpcSecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      ImageId: !Ref 'LatestAmiId'
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sudo yum -y update
+          sudo yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+          sudo systemctl enable amazon-ssm-agent
+          sudo systemctl start amazon-ssm-agent
+
+          # Install Apache webserver
+          yum install -y httpd
+          service httpd start
+          chkconfig httpd on
+
+          # IMDSv2 token processing
+          TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+          IP_ADDR=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -v http://169.254.169.254/latest/meta-data/public-ipv4)
+
+          echo "Manual instance with IP $IP_ADDR" > /var/www/html/index.html
+          echo "ok" > /var/www/html/health.html
+
+  # Create a Security Group for the EC2 Instance
+  EC2SecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'Security Group for EC2 Instance'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: 'tcp'
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: '0.0.0.0/0'
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: '0.0.0.0/0'
+
+  # Create a Target Group for Lambda Function
+  LambdaTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 'Lambda-Target-Group'
+      Protocol: 'HTTP'
+      Port: 80
+      TargetType: 'lambda'
+      VpcId: !Ref VpcId
+      HealthCheckPath: '/'
+      HealthCheckProtocol: 'HTTP'
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 2
+
+  # Define the Lambda Function
+  MyLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        ZipFile: |
+          handler.js
+          exports.handler = async (event) => {
+            return {
+              statusCode: 200,
+              body: 'Hello from Lambda!'
+            };
+          };
+      Runtime: 'nodejs14.x'
+      Handler: 'handler.handler'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+
+  # Define the IAM Role for the Lambda Function
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service:
+                - 'lambda.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: 'LambdaExecutionPolicy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: 'arn:aws:logs:*:*:*'
+
+  # Create a Listener Rule for EC2 Target Group
+  EC2ListenerRule:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      ListenerArn: !GetAtt MyALB.ListenerArn
+      Priority: 1
+      Actions:
+        - Type: 'forward'
+          TargetGroupArn: !Ref EC2TargetGroup
+      Conditions:
+        - Field: 'path-pattern'
+          Values:
+            - '/ec2'
+
+  # Create a Listener Rule for Lambda Target Group
+  LambdaListenerRule:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      ListenerArn: !GetAtt MyALB.ListenerArn
+      Priority: 2
+      Actions:
+        - Type: 'forward'
+          TargetGroupArn: !Ref LambdaTargetGroup
+      Conditions:
+        - Field: 'path-pattern'
+          Values:
+            - '/lambda'
