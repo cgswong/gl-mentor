@@ -2,32 +2,46 @@
 # DESC: Use AWS CLI to create simple VPC.
 
 unset AWS_CLI_AUTO_PROMPT
+export VPC_CIDR=${1:-"10.50.0.0/16"}
+export VPC_PUBLIC_SUBNET_CIDR_1=${1:-"10.50.0.0/24"}
+export VPC_PUBLIC_SUBNET_CIDR_2=${1:-"10.50.2.0/24"}
+export VPC_PUBLIC_SUBNET_CIDR_1=${1:-"10.50.1.0/24"}
+export VPC_PUBLIC_SUBNET_CIDR_2=${1:-"10.50.3.0/24"}
 export AWS_REGION=us-east-1
 export AWS_PAGER=
 export AWS_PROFILE=default
 
 echo "Create VPC and add tags"
 aws ec2 create-vpc \
-  --cidr-block 10.50.0.0/16
-VPC_ID=$(aws ec2 describe-vpcs --filters Name=cidr,Values=["10.50.0.0/16"] --query 'Vpcs[*].VpcId' --output=text)
-aws ec2 create-tags \
-  --resources ${VPC_ID} \
-  --tags Key=Name,Value=demo-cli-vpc
+  --cidr-block ${VPC_CIDR} \
+  --tag-specifications ResourceType=vpc,Tags='[{Key="Name",Value="demo-cli-vpc"}]'
+VPC_ID=$(aws ec2 describe-vpcs --filters Name=cidr,Values=\["${VPC_CIDR}"\] --query 'Vpcs[*].VpcId' --output=text)
 
 echo "Create subnets (for public and private)"
 aws ec2 create-subnet \
   --vpc-id ${VPC_ID} \
-  --cidr-block 10.50.1.0/24
-PUB_SUBNET_ID=$(aws ec2 describe-subnets --query 'Subnets[?CidrBlock==`10.50.1.0/24`].SubnetId' --output=text)
-aws ec2 create-tags \
-  --resources ${PUB_SUBNET_ID} --tags Key=Name,Value=demo-cli-pub-us-east-1
-
+  --cidr-block ${VPC_PUBLIC_SUBNET_CIDR_1} \
+  --availability-zone us-east-1a \
+  --tag-specifications ResourceType=subnet,Tags='[{Key="Name",Value="demo-cli-pub-us-east-1a"}]'
+PUB_SUBNET_1_ID=$(aws ec2 describe-subnets --query "Subnets[?CidrBlock==\`${VPC_PUBLIC_SUBNET_CIDR_1}\`].SubnetId" --output=text)
 aws ec2 create-subnet \
   --vpc-id ${VPC_ID} \
-  --cidr-block 10.50.2.0/24
-PRV_SUBNET_ID=$(aws ec2 describe-subnets --query 'Subnets[?CidrBlock==`10.50.2.0/24`].SubnetId' --output=text)
-aws ec2 create-tags \
-  --resources ${PRV_SUBNET_ID} --tags Key=Name,Value=demo-cli-prv-us-east-1
+  --cidr-block ${VPC_PUBLIC_SUBNET_CIDR_2} \
+  --availability-zone us-east-1b \
+  --tag-specifications ResourceType=subnet,Tags='[{Key="Name",Value="demo-cli-pub-us-east-1b"}]'
+PUB_SUBNET_2_ID=$(aws ec2 describe-subnets --query "Subnets[?CidrBlock==\`${VPC_PUBLIC_SUBNET_CIDR_2}\`].SubnetId" --output=text)
+aws ec2 create-subnet \
+  --vpc-id ${VPC_ID} \
+  --cidr-block ${VPC_PRIVATE_SUBNET_CIDR_1} \
+  --availability-zone us-east-1a \
+  --tag-specifications ResourceType=subnet,Tags='[{Key="Name",Value="demo-cli-prv-us-east-1a"}]'
+PRV_SUBNET_1_ID=$(aws ec2 describe-subnets --query "Subnets[?CidrBlock==\`${VPC_PRIVATE_SUBNET_CIDR_1}\`].SubnetId" --output=text)
+aws ec2 create-subnet \
+  --vpc-id ${VPC_ID} \
+  --cidr-block ${VPC_PRIVATE_SUBNET_CIDR_2} \
+  --availability-zone us-east-1a \
+  --tag-specifications ResourceType=subnet,Tags='[{Key="Name",Value="demo-cli-prv-us-east-1b"}]'
+PRV_SUBNET_2_ID=$(aws ec2 describe-subnets --query "Subnets[?CidrBlock==\`${VPC_PRIVATE_SUBNET_CIDR_2}\`].SubnetId" --output=text)
 
 echo "Create IGW and attach to VPC"
 aws ec2 create-internet-gateway \
@@ -43,7 +57,7 @@ aws ec2 allocate-address \
   --tag-specifications ResourceType=elastic-ip,Tags='[{Key="Name",Value="demo-cli-eip"}]'
 EIP_ALLOC_ID=$(aws ec2 describe-addresses --query 'Addresses[?Tags[?Value==`demo-cli-eip`]].AllocationId' --output text)
 aws ec2 create-nat-gateway \
-  --subnet-id ${PUB_SUBNET_ID} \
+  --subnet-id ${PUB_SUBNET_1_ID} \
   --allocation-id ${EIP_ALLOC_ID} \
   --tag-specifications ResourceType=natgateway,Tags='[{Key="Name",Value="demo-cli-natgw-us-east-1"}]'
 NATGW_ID=$(aws ec2 describe-nat-gateways --query "NatGateways[?VpcId==\`${VPC_ID}\`].NatGatewayId" --output=text)
@@ -71,11 +85,17 @@ aws ec2 create-route \
 
 aws ec2 associate-route-table \
   --route-table-id ${PUB_RT_ID} \
-  --subnet-id ${PUB_SUBNET_ID}
+  --subnet-id ${PUB_SUBNET_1_ID}
+aws ec2 associate-route-table \
+  --route-table-id ${PUB_RT_ID} \
+  --subnet-id ${PUB_SUBNET_2_ID}
 
 aws ec2 associate-route-table \
   --route-table-id ${PRV_RT_ID} \
-  --subnet-id ${PRV_SUBNET_ID}
+  --subnet-id ${PRV_SUBNET_1_ID}
+aws ec2 associate-route-table \
+  --route-table-id ${PRV_RT_ID} \
+  --subnet-id ${PRV_SUBNET_2_ID}
 
 echo "Create security group (SG) with rules for VPC resources"
 aws ec2 create-security-group \
