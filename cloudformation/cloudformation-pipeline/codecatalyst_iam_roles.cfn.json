@@ -1,0 +1,188 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "AWS CloudFormation Template IAM_Role_and_Policies: Template to create 2 new service roles for CodeCatalyst - CloudFormation deployment. **WARNING** The `main_branch_IAM_role` provides full access to AWS resources in EC2 and CloudFormation services, as those will be used by sample CloudFormation template mentioned in the blog. Please use this role carefully and delete it when not required.",
+
+  "Resources" : {
+    "MainBranchRole": {
+        "Type": "AWS::IAM::Role",
+        "Properties": {
+            "AssumeRolePolicyDocument": {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Sid": "Statement1",
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": [
+                                "codecatalyst.amazonaws.com",
+                                "codecatalyst-runner.amazonaws.com"
+                            ]
+                        },
+                        "Action": "sts:AssumeRole"
+                    }
+                ]
+            },
+            "Path": "/",
+            "RoleName" : "main_branch_IAM_role",
+            "Policies": [
+                {
+                    "PolicyName": "ProvideAmazonEC2FullAccess",
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Action": "ec2:*",
+                                "Effect": "Allow",
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": "elasticloadbalancing:*",
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": "cloudwatch:*",
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": "autoscaling:*",
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": "iam:CreateServiceLinkedRole",
+                                "Resource": "*",
+                                "Condition": {
+                                    "StringEquals": {
+                                        "iam:AWSServiceName": [
+                                            "autoscaling.amazonaws.com",
+                                            "ec2scheduled.amazonaws.com",
+                                            "elasticloadbalancing.amazonaws.com",
+                                            "spot.amazonaws.com",
+                                            "spotfleet.amazonaws.com",
+                                            "transitgateway.amazonaws.com"
+                                        ]
+                                    }
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "cognito-idp:DescribeUserPoolClient"
+                                ],
+                                "Resource": "*"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "PolicyName": "ProvideAWSCloudFormationFullAccess",
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "cloudformation:*"
+                                ],
+                                "Resource": "*"
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    },
+    "PRBranchRole": {
+        "Type": "AWS::IAM::Role",
+        "Properties": {
+            "AssumeRolePolicyDocument": {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Sid": "Statement1",
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": [
+                                "codecatalyst.amazonaws.com",
+                                "codecatalyst-runner.amazonaws.com"
+                            ]
+                        },
+                        "Action": "sts:AssumeRole"
+                    }
+                ]
+            },
+            "Path": "/",
+            "RoleName" : "pr_branch_IAM_role",
+            "Policies": [
+                {
+                    "PolicyName": "CloudFormation-PR-policy",
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Action": [
+                                    "cloudformation:Describe*",
+                                    "cloudformation:CreateChangeSet",
+                                    "cloudformation:DeleteChangeSet",
+                                    "cloudformation:ExecuteChangeSet",
+                                    "cloudformation:SetStackPolicy",
+                                    "cloudformation:ValidateTemplate",
+                                    "cloudformation:List*",
+                                    "iam:PassRole"
+                                ],
+                                "Resource": "*",
+                                "Effect": "Allow"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "PolicyName": "ProvideEC2ReadOnlyAccess",
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Action": "ec2:Describe*",
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": "elasticloadbalancing:Describe*",
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "cloudwatch:ListMetrics",
+                                    "cloudwatch:GetMetricStatistics",
+                                    "cloudwatch:Describe*"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": "autoscaling:Describe*",
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "sns:ListSubscriptions",
+                                    "sns:ListTopics"
+                                ],
+                                "Resource": "*"
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    }
+  }
+}
+
