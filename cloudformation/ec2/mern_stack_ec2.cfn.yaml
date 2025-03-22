@@ -1,0 +1,186 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Create Docker-enabled EC2 instance with git repositories for MERN stack.'
+
+Parameters:
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t3.small
+    AllowedValues:
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  UbuntuAMI:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/canonical/ubuntu/server/20.04/stable/current/amd64/hvm/ebs-gp2/ami-id'
+
+  VpcId:
+    Description: VPC ID where the EC2 instance will be launched
+    Type: AWS::EC2::VPC::Id
+    ConstraintDescription: Must be a valid VPC ID
+
+  SubnetId:
+    Description: Subnet ID where the EC2 instance will be launched
+    Type: AWS::EC2::Subnet::Id
+    ConstraintDescription: Must be a valid Subnet ID
+
+  RootVolumeSize:
+    Description: Size of the root EBS volume in GB
+    Type: Number
+    Default: 10
+    MinValue: 8
+    MaxValue: 30
+    ConstraintDescription: Must be a number between 8 and 30
+
+  IngressCIDR:
+    Description: CIDR block for ingress connections
+    Type: String
+    Default: 0.0.0.0/0
+    AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$'
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  ReactGitURL:
+    Description: URL for the first Git repository
+    Type: String
+    Default: 'https://github.com/Acads-Ops-GreatLearning/guided_project_e_comm_client.git'
+    ConstraintDescription: Must be a valid Git repository URL
+
+  ExpressGitURL:
+    Description: URL for the second Git repository
+    Type: String
+    Default: 'https://github.com/Acads-Ops-GreatLearning/guided_project_e_comm_backend.git'
+    ConstraintDescription: Must be a valid Git repository URL
+
+Resources:
+  EC2KeyPair:
+    Type: 'AWS::EC2::KeyPair'
+    Properties:
+      KeyName: !Sub '${AWS::StackName}-kp'
+
+  DockerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Security group for Docker EC2 instance
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref IngressCIDR
+          Description: !Sub 'SSH from ${IngressCIDR}'
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: !Ref IngressCIDR
+          Description: !Sub 'React app from ${IngressCIDR}'
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: !Ref IngressCIDR
+          Description: !Sub 'Express app from ${IngressCIDR}'
+
+  # amazonq-ignore-next-line
+  DockerInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref UbuntuAMI
+      KeyName: !Ref EC2KeyPair
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref DockerSecurityGroup
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref RootVolumeSize
+            VolumeType: gp3
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+
+          # Update package list and upgrade existing packages
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+
+          # Install required packages
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            apt-transport-https \
+            ca-certificates \
+            curl \
+            software-properties-common \
+            git
+
+          # Add Docker's official GPG key
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+          # Add Docker repository
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+          # Update apt package list again
+          apt-get update
+
+          # Install Docker
+          DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io
+
+          # Start and enable Docker service
+          systemctl start docker
+          systemctl enable docker
+
+          # Add ubuntu user to docker group
+          usermod -aG docker ubuntu
+
+          # Install Docker Compose
+          curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          chmod +x /usr/local/bin/docker-compose
+
+          # Create application directory
+          mkdir -p /app
+          chown ubuntu:ubuntu /app
+
+          # Clone Git repositories
+          cd /app
+          sudo -u ubuntu git clone ${ReactGitURL} react-app
+          sudo -u ubuntu git clone ${ExpressGitURL} express-app
+      EbsOptimized: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}'
+  EC2Role:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+  EC2InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Roles:
+        - !Ref EC2Role
+
+Outputs:
+  InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref DockerInstance
+
+  PublicDNS:
+    Description: Public DNS name of the EC2 instance
+    Value: !GetAtt DockerInstance.PublicDnsName
+
+  ECKeyPairId:
+    Description: The ID of the SSH key pair associated with the EC2 instance
+    Value: !Ref EC2KeyPair
