@@ -1,0 +1,34 @@
+[
+  {
+    "ParameterKey": "InstanceType",
+    "ParameterValue": "t3.small"
+  },
+  {
+    "ParameterKey": "UbuntuAMI",
+    "ParameterValue": "/aws/service/canonical/ubuntu/server/20.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
+  },
+  {
+    "ParameterKey": "VpcId",
+    "ParameterValue": "vpc-xxxxxxxxxx"
+  },
+  {
+    "ParameterKey": "SubnetId",
+    "ParameterValue": "subnet-xxxxxxxxxx"
+  },
+  {
+    "ParameterKey": "RootVolumeSize",
+    "ParameterValue": "10"
+  },
+  {
+    "ParameterKey": "IngressCIDR",
+    "ParameterValue": "0.0.0.0/0"
+  },
+  {
+    "ParameterKey": "ReactGitURL",
+    "ParameterValue": "https://github.com/Acads-Ops-GreatLearning/guided_project_e_comm_client.git"
+  },
+  {
+    "ParameterKey": "ExpressGitURL",
+    "ParameterValue": "https://github.com/Acads-Ops-GreatLearning/guided_project_e_comm_backend.git"
+  }
+]
