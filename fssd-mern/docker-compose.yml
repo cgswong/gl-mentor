@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  react-app:
+    build:
+      context: ./react-app
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://<INSTANCE_IP>:8080
+    depends_on:
+      - express-app
+    networks:
+      - mern-network
+
+  express-app:
+    build:
+      context: ./express-app
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb+srv://<db_user>:<db_password>@<db_name>.mongodb.net/?retryWrites=true&w=majority
+      - PORT=8080
+    networks:
+      - mern-network
+
+networks:
+  mern-network:
+    driver: bridge
