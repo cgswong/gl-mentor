@@ -1,0 +1,30 @@
+[
+  {
+    "Key": "owner",
+    "Value": "cgs.wong+aws@gmail.com"
+  },
+  {
+    "Key": "managed-by",
+    "Value": "CloudFormation"
+  },
+  {
+    "Key": "environment",
+    "Value": "sandbox"
+  },
+  {
+    "Key": "purpose",
+    "Value": "demo"
+  },
+  {
+    "Key": "application",
+    "Value": "infra-network"
+  },
+  {
+    "Key": "expiry-date",
+    "Value": "2025-12-31"
+  },
+  {
+    "Key": "cost-center",
+    "Value": "Revelar-LLC"
+  }
+]

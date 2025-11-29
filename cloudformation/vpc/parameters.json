@@ -1,0 +1,22 @@
+[
+  {
+    "ParameterKey": "VpcCidrs",
+    "ParameterValue": "10.100.0.0/16"
+  },
+  {
+    "ParameterKey": "IpamPoolId",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "PrivateSubnets",
+    "ParameterValue": "2"
+  },
+  {
+    "ParameterKey": "PublicSubnets",
+    "ParameterValue": "2"
+  },
+  {
+    "ParameterKey": "NatGateways",
+    "ParameterValue": "SINGLE"
+  }
+]
