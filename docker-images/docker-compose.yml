@@ -2,6 +2,10 @@ services:
   # Elasticsearch - search and analytics engine
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    environment:
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - KIBANA_PASSWORD=${KIBANA_PASSWORD}
+      - STACK_VERSION=${STACK_VERSION}
     volumes:
       - certs:/usr/share/elasticsearch/config/certs
     networks:
@@ -73,9 +77,13 @@ services:
     environment:
       - node.name=es01
       - cluster.name=${CLUSTER_NAME}
-      - cluster.initial_master_nodes=es01,es02,es03
-      - discovery.seed_hosts=es02,es03
+      - cluster.initial_master_nodes=es01,es02
+      - discovery.seed_hosts=es02
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - STACK_VERSION=${STACK_VERSION}
+      - ES_PORT=${ES_PORT}
+      - LICENSE=${LICENSE}
+      - MEM_LIMIT=${MEM_LIMIT}
       - bootstrap.memory_lock=true
       - xpack.security.enabled=true
       - xpack.security.http.ssl.enabled=true
@@ -113,9 +121,13 @@ services:
     environment:
       - node.name=es02
       - cluster.name=${CLUSTER_NAME}
-      - cluster.initial_master_nodes=es01,es02,es03
-      - discovery.seed_hosts=es01,es03
+      - cluster.initial_master_nodes=es01,es02
+      - discovery.seed_hosts=es01
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - STACK_VERSION=${STACK_VERSION}
+      - ES_PORT=${ES_PORT}
+      - LICENSE=${LICENSE}
+      - MEM_LIMIT=${MEM_LIMIT}
       - bootstrap.memory_lock=true
       - xpack.security.enabled=true
       - xpack.security.http.ssl.enabled=true
@@ -142,7 +154,7 @@ services:
 
   # Logstash - data processing pipeline
   logstash:
-    image: docker.elastic.co/logstash/logstash:${ELASTIC_VERSION}
+    image: docker.elastic.co/logstash/logstash:${STACK_VERSION}
     container_name: logstash
     volumes:
       - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
@@ -153,6 +165,7 @@ services:
       ELASTICSEARCH_HOSTS: http://elasticsearch:9200
       ELASTICSEARCH_USERNAME: ${ELASTIC_USER}
       ELASTICSEARCH_PASSWORD: ${ELASTIC_PASSWORD}
+      STACK_VERSION: ${STACK_VERSION}
     networks:
       - elk-network
     depends_on:
@@ -173,6 +186,8 @@ services:
       - ${KIBANA_PORT}:5601
     environment:
       - SERVERNAME=kibana
+      - STACK_VERSION=${STACK_VERSION}
+      - KIBANA_PORT=${KIBANA_PORT}
       - ELASTICSEARCH_HOSTS=https://es01:9200
       - ELASTICSEARCH_USERNAME=kibana_system
       - ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD}
