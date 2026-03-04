@@ -1,0 +1,22 @@
+[
+  {
+    "ParameterKey": "VpcId",
+    "ParameterValue": "vpc-xxxxxxxxx"
+  },
+  {
+    "ParameterKey": "PublicSubnet1",
+    "ParameterValue": "subnet-xxxxxxxxx"
+  },
+  {
+    "ParameterKey": "PublicSubnet2",
+    "ParameterValue": "subnet-yyyyyyyyy"
+  },
+  {
+    "ParameterKey": "BackendType",
+    "ParameterValue": "EC2AndLambda"
+  },
+  {
+    "ParameterKey": "AllowedCidrBlock",
+    "ParameterValue": "0.0.0.0/0"
+  }
+]

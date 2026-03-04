@@ -1,146 +1,304 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Create an ALB with Lambda backend (demo).'
+Description: 'ALB with flexible backend targets: EC2, Lambda, or both. Supports AL2023, t3.micro free tier, and latest Lambda runtimes.'
 
-# Input parameters
+# ============================================================================
+# PARAMETERS
+# ============================================================================
 Parameters:
-  ExistingVpcId:
-    Description: 'ID for existing VPC.'
-    Type: String
-  PublicSubnetId1:
-    Description: 'Subnet ID for AZ 1 for hosting the ALB.'
-    Type: String
-  PublicSubnetId2:
-    Description: 'Subnet ID for AZ 2 for hosting the ALB.'
-    Type: String
+  # Network Configuration
+  VpcId:
+    Type: 'AWS::EC2::VPC::Id'
+    Description: 'VPC ID where resources will be deployed'
 
-# Resources to be created
+  PublicSubnet1:
+    Type: 'AWS::EC2::Subnet::Id'
+    Description: 'Public subnet in first availability zone for ALB'
+
+  PublicSubnet2:
+    Type: 'AWS::EC2::Subnet::Id'
+    Description: 'Public subnet in second availability zone for ALB'
+
+  # Backend Configuration
+  BackendType:
+    Type: String
+    Description: 'Choose backend target type for the ALB'
+    Default: 'EC2AndLambda'
+    AllowedValues:
+      - 'EC2Only'
+      - 'LambdaOnly'
+      - 'EC2AndLambda'
+
+  # Security Configuration
+  AllowedCidrBlock:
+    Type: String
+    Description: 'CIDR block allowed to access the ALB (e.g., 0.0.0.0/0 for public, 10.0.0.0/8 for private)'
+    Default: '0.0.0.0/0'
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+    ConstraintDescription: 'Must be a valid CIDR block (e.g., 10.0.0.0/16)'
+
+  # EC2 Configuration
+  LatestAL2023AmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Description: 'Latest Amazon Linux 2023 AMI ID (auto-resolved via SSM)'
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
+
+# ============================================================================
+# CONDITIONS
+# ============================================================================
+Conditions:
+  # Determine which resources to create based on BackendType parameter
+  CreateEC2Resources: !Or
+    - !Equals [!Ref BackendType, 'EC2Only']
+    - !Equals [!Ref BackendType, 'EC2AndLambda']
+  
+  CreateLambdaResources: !Or
+    - !Equals [!Ref BackendType, 'LambdaOnly']
+    - !Equals [!Ref BackendType, 'EC2AndLambda']
+  
+  CreateBothBackends: !Equals [!Ref BackendType, 'EC2AndLambda']
+
+# ============================================================================
+# RESOURCES
+# ============================================================================
 Resources:
-  # ALB resources (ALB, listener, target group, security group)
-  LambdaAlbSecurityGroup:
+  # --------------------------------------------------------------------------
+  # ALB Security Group
+  # --------------------------------------------------------------------------
+  ALBSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
     Properties:
-      GroupDescription: 'Allow HTTP traffic to backend'
-      VpcId: !Ref ExistingVpcId
+      GroupName: !Sub '${AWS::StackName}-alb-sg'
+      GroupDescription: 'Security group for Application Load Balancer'
+      VpcId: !Ref VpcId
       SecurityGroupIngress:
+        # Allow HTTP traffic from specified CIDR block
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          CidrIp: '0.0.0.0/0'
+          CidrIp: !Ref AllowedCidrBlock
+          Description: 'Allow HTTP traffic from allowed CIDR'
       SecurityGroupEgress:
-        - IpProtocol: tcp
-          FromPort: 0
-          ToPort: 0
+        # Allow all outbound traffic to backend targets
+        - IpProtocol: -1
           CidrIp: '0.0.0.0/0'
+          Description: 'Allow all outbound traffic'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-alb-sg'
 
-  LambdaAlb:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+  # --------------------------------------------------------------------------
+  # Application Load Balancer
+  # --------------------------------------------------------------------------
+  ApplicationLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
     Properties:
-      Scheme: 'internet-facing'
-      SecurityGroups:
-        - !Ref LambdaAlbSecurityGroup
+      Name: !Sub '${AWS::StackName}-alb'
+      Type: application
+      Scheme: internet-facing
+      IpAddressType: ipv4
       Subnets:
-        - !Ref PublicSubnetId1
-        - !Ref PublicSubnetId2
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      # Best practice: Drop invalid HTTP headers
+      LoadBalancerAttributes:
+        - Key: routing.http.drop_invalid_header_fields.enabled
+          Value: 'true'
+        - Key: deletion_protection.enabled
+          Value: 'false'
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-alb'
 
-  LambdaAlbTargetGroup1:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+  # --------------------------------------------------------------------------
+  # ALB Listener (HTTP:80)
+  # --------------------------------------------------------------------------
+  ALBListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
     Properties:
-      HealthCheckEnabled: false
-      TargetType: lambda
-      Targets:
-        - Id: !GetAtt LambdaFunction.Arn
-      Tags:
-        - Key: Name
-          Value: !Sub '${AWS::StackName}-alb-tg1'
-        - Key: env
-          Value: 'test'
-
-  LambdaAlbListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      LoadBalancerArn: !GetAtt LambdaAlb.LoadBalancerArn
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Protocol: HTTP
       Port: 80
-      Protocol: 'HTTP'
+      # Default action depends on backend type
       DefaultActions:
-        - Type: 'forward'
-          TargetGroupArn: !GetAtt LambdaAlbTargetGroup1.TargetGroupArn
-          ForwardConfig:
-            TargetGroups:
-              - TargetGroupArn: !GetAtt LambdaAlbTargetGroup1.TargetGroupArn
+        - Type: forward
+          TargetGroupArn: !If
+            - CreateEC2Resources
+            - !Ref EC2TargetGroup
+            - !Ref LambdaTargetGroup
 
-  LambdaAlbAlarm:
-    Type: 'AWS::CloudWatch::Alarm'
+  # ==========================================================================
+  # EC2 BACKEND RESOURCES
+  # ==========================================================================
+  
+  # --------------------------------------------------------------------------
+  # EC2 Security Group
+  # --------------------------------------------------------------------------
+  EC2SecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Condition: CreateEC2Resources
     Properties:
-      AlarmDescription: !Sub 'Monitor ALB for ${LambdaAlb}'
-      Namespace: 'AWS/ApplicationELB'
-      Dimensions:
-        - Name: LoadBalancer
-          Value: !GetAtt LambdaAlb.LoadBalancerFullName
-        - Name: TargetGroup
-          Value: !GetAtt LambdaAlbTargetGroup1.TargetGroupFullName
-      MetricName: UnHealthyHostCount
-      Period: 60
-      Statistic: Average
-      ComparisonOperator: GreaterThanThreshold
-      Threshold: 0
-      EvaluationPeriods: 1
+      GroupName: !Sub '${AWS::StackName}-ec2-sg'
+      GroupDescription: 'Security group for EC2 backend instances'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # Allow HTTP from ALB only
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+          Description: 'Allow HTTP from ALB'
+      SecurityGroupEgress:
+        # Allow all outbound for updates and SSM
+        - IpProtocol: -1
+          CidrIp: '0.0.0.0/0'
+          Description: 'Allow all outbound traffic'
       Tags:
         - Key: Name
-          Value: !Sub '${AWS::StackName}-alb-alarm'
+          Value: !Sub '${AWS::StackName}-ec2-sg'
 
-  # Backend Lambda resources (function, permission, and role)
-  LambdaFunction:
-    Type: AWS::Lambda::Function
+  # --------------------------------------------------------------------------
+  # EC2 IAM Role (for SSM Session Manager)
+  # --------------------------------------------------------------------------
+  EC2InstanceRole:
+    Type: 'AWS::IAM::Role'
+    Condition: CreateEC2Resources
     Properties:
-      Handler: 'index.handler'
-      Role: !GetAtt LambdaExecutionRole.Arn
-      MemorySize: 128
-      Runtime: 'python3.13'
-      Timeout: 25
-      Code:
-        ZipFile: !Sub |
-          import json
+      RoleName: !Sub '${AWS::StackName}-ec2-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        # Enables SSM Session Manager for secure shell access
+        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ec2-role'
 
-          def handler(event, context):
-            response = {
-              "statusCode": 200,
-              "statusDescription": "200 OK",
-              "isBase64Encoded": False,
-              "headers": {
-                "Content-Type": "text/html; charset=utf-8"
-              }
-            }
-
-            response['body'] = """<html>
-            <head>
-            <title>Hello World!</title>
-            <style>
-            html, body {
-              margin: 0; padding: 0;
-              font-family: arial; font-weight: 700; font-size: 3em;
-              text-align: center;
-            }
-            </style>
-            </head>
-            <body>
-            <p>Hello World from Lambda</p>
-            </body>
-            </html>"""
-            return response
-
-  LambdaInvokePermission:
-    Type: AWS::Lambda::Permission
+  EC2InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Condition: CreateEC2Resources
     Properties:
-      FunctionName: !GetAtt LambdaFunction.Arn
-      Action: 'lambda:InvokeFunction'
-      Principal: elasticloadbalancing.amazonaws.com
+      InstanceProfileName: !Sub '${AWS::StackName}-ec2-profile'
+      Roles:
+        - !Ref EC2InstanceRole
 
+  # --------------------------------------------------------------------------
+  # EC2 Target Group
+  # --------------------------------------------------------------------------
+  EC2TargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Condition: CreateEC2Resources
+    DependsOn: EC2Instance
+    Properties:
+      Name: !Sub '${AWS::StackName}-ec2-tg'
+      Protocol: HTTP
+      Port: 80
+      VpcId: !Ref VpcId
+      TargetType: instance
+      # Register EC2 instance as target
+      Targets:
+        - Id: !Ref EC2Instance
+          Port: 80
+      # Health check configuration
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: '/health'
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: '200'
+      # Deregistration delay for graceful shutdown
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '30'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ec2-tg'
+
+  # --------------------------------------------------------------------------
+  # EC2 Instance (t3.micro - free tier eligible)
+  # --------------------------------------------------------------------------
+  EC2Instance:
+    Type: 'AWS::EC2::Instance'
+    Condition: CreateEC2Resources
+    Properties:
+      InstanceType: t3.micro
+      ImageId: !Ref LatestAL2023AmiId
+      SubnetId: !Ref PublicSubnet1
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      # User data script to install and configure Apache
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Update system packages
+          dnf update -y
+          
+          # Install Apache web server (httpd)
+          dnf install -y httpd
+          
+          # Start and enable Apache
+          systemctl start httpd
+          systemctl enable httpd
+          
+          # Get instance metadata using IMDSv2 (more secure)
+          TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+          INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+          AZ=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone)
+          
+          # Create index page
+          cat > /var/www/html/index.html <<EOF
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>EC2 Backend</title>
+              <style>
+                  body { font-family: Arial, sans-serif; margin: 50px; background: #f0f0f0; }
+                  .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                  h1 { color: #232f3e; }
+                  .info { background: #e7f3ff; padding: 15px; border-radius: 5px; margin: 10px 0; }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <h1>Hello from EC2 Backend!</h1>
+                  <div class="info">
+                      <p><strong>Instance ID:</strong> $INSTANCE_ID</p>
+                      <p><strong>Availability Zone:</strong> $AZ</p>
+                      <p><strong>Platform:</strong> Amazon Linux 2023</p>
+                  </div>
+              </div>
+          </body>
+          </html>
+          EOF
+          
+          # Create health check endpoint
+          echo "ok" > /var/www/html/health
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ec2-instance'
+
+  # ==========================================================================
+  # LAMBDA BACKEND RESOURCES
+  # ==========================================================================
+  
+  # --------------------------------------------------------------------------
+  # Lambda Execution Role
+  # --------------------------------------------------------------------------
   LambdaExecutionRole:
     Type: 'AWS::IAM::Role'
+    Condition: CreateLambdaResources
     Properties:
+      RoleName: !Sub '${AWS::StackName}-lambda-role'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -149,13 +307,258 @@ Resources:
               Service: lambda.amazonaws.com
             Action: 'sts:AssumeRole'
       ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/AWSLambdaExecute'
+        # Basic Lambda execution permissions (CloudWatch Logs)
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-lambda-role'
 
-# Useful outputs
+  # --------------------------------------------------------------------------
+  # Lambda Function (Python)
+  # --------------------------------------------------------------------------
+  LambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Condition: CreateLambdaResources
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-lambda-function'
+      Runtime: python3.14
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 128
+      # Inline Lambda code for ALB integration
+      Code:
+        ZipFile: |
+          import json
+          import os
+          
+          def handler(event, context):
+              """
+              Lambda function handler for ALB integration.
+              Returns HTML response with request details.
+              """
+              # Extract request information
+              request_context = event.get('requestContext', {})
+              headers = event.get('headers', {})
+              
+              # Build HTML response
+              html_content = f"""
+              <!DOCTYPE html>
+              <html>
+              <head>
+                  <title>Lambda Backend</title>
+                  <style>
+                      body {{ font-family: Arial, sans-serif; margin: 50px; background: #f0f0f0; }}
+                      .container {{ background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                      h1 {{ color: #ff9900; }}
+                      .info {{ background: #fff3e0; padding: 15px; border-radius: 5px; margin: 10px 0; }}
+                      .code {{ background: #f5f5f5; padding: 10px; border-radius: 3px; font-family: monospace; }}
+                  </style>
+              </head>
+              <body>
+                  <div class="container">
+                      <h1>Hello from Lambda Backend!</h1>
+                      <div class="info">
+                          <p><strong>Function Name:</strong> {context.function_name}</p>
+                          <p><strong>Request ID:</strong> {context.request_id}</p>
+                          <p><strong>Runtime:</strong> Python 3.13</p>
+                          <p><strong>Memory:</strong> {context.memory_limit_in_mb} MB</p>
+                      </div>
+                      <div class="info">
+                          <p><strong>Path:</strong> {event.get('path', 'N/A')}</p>
+                          <p><strong>HTTP Method:</strong> {event.get('httpMethod', 'N/A')}</p>
+                      </div>
+                  </div>
+              </body>
+              </html>
+              """
+              
+              # Return ALB-compatible response
+              return {
+                  'statusCode': 200,
+                  'statusDescription': '200 OK',
+                  'isBase64Encoded': False,
+                  'headers': {
+                      'Content-Type': 'text/html; charset=utf-8'
+                  },
+                  'body': html_content
+              }
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-lambda-function'
+
+  # --------------------------------------------------------------------------
+  # Lambda Target Group
+  # --------------------------------------------------------------------------
+  LambdaTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Condition: CreateLambdaResources
+    DependsOn: LambdaInvokePermission
+    Properties:
+      Name: !Sub '${AWS::StackName}-lambda-tg'
+      TargetType: lambda
+      # Lambda target groups don't need health checks
+      HealthCheckEnabled: false
+      Targets:
+        - Id: !GetAtt LambdaFunction.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-lambda-tg'
+
+  # --------------------------------------------------------------------------
+  # Lambda Permission (allow ALB to invoke)
+  # --------------------------------------------------------------------------
+  LambdaInvokePermission:
+    Type: 'AWS::Lambda::Permission'
+    Condition: CreateLambdaResources
+    Properties:
+      FunctionName: !Ref LambdaFunction
+      Action: 'lambda:InvokeFunction'
+      Principal: elasticloadbalancing.amazonaws.com
+      SourceArn: !Sub 'arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:targetgroup/${AWS::StackName}-lambda-tg/*'
+
+  # ==========================================================================
+  # LISTENER RULES (for EC2AndLambda mode)
+  # ==========================================================================
+  
+  # --------------------------------------------------------------------------
+  # Listener Rule: Route /ec2* to EC2 Target Group
+  # --------------------------------------------------------------------------
+  EC2ListenerRule:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Condition: CreateBothBackends
+    Properties:
+      ListenerArn: !Ref ALBListener
+      Priority: 10
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - '/ec2*'
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref EC2TargetGroup
+
+  # --------------------------------------------------------------------------
+  # Listener Rule: Route /lambda* to Lambda Target Group
+  # --------------------------------------------------------------------------
+  LambdaListenerRule:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Condition: CreateBothBackends
+    Properties:
+      ListenerArn: !Ref ALBListener
+      Priority: 20
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - '/lambda*'
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref LambdaTargetGroup
+
+  # ==========================================================================
+  # MONITORING
+  # ==========================================================================
+  
+  # --------------------------------------------------------------------------
+  # CloudWatch Alarm: Unhealthy Target Count
+  # --------------------------------------------------------------------------
+  UnhealthyTargetAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Condition: CreateEC2Resources
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-unhealthy-targets'
+      AlarmDescription: 'Alert when EC2 targets become unhealthy'
+      MetricName: UnHealthyHostCount
+      Namespace: AWS/ApplicationELB
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt ApplicationLoadBalancer.LoadBalancerFullName
+        - Name: TargetGroup
+          Value: !GetAtt EC2TargetGroup.TargetGroupFullName
+      TreatMissingData: notBreaching
+
+# ============================================================================
+# OUTPUTS
+# ============================================================================
 Outputs:
-  AlbSecurityGroupId:
-    Description: 'Security Group for the ALB.'
-    Value: !Ref LambdaAlbSecurityGroup
-  LambdaAlbDNSName:
-    Description: 'DNS name for the ALB with Lambda backend.'
-    Value: !GetAtt LambdaAlb.DNSName
+  # ALB Information
+  LoadBalancerDNS:
+    Description: 'DNS name of the Application Load Balancer'
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub '${AWS::StackName}-alb-dns'
+
+  LoadBalancerURL:
+    Description: 'Full URL to access the Application Load Balancer'
+    Value: !Sub 'http://${ApplicationLoadBalancer.DNSName}'
+
+  LoadBalancerArn:
+    Description: 'ARN of the Application Load Balancer'
+    Value: !Ref ApplicationLoadBalancer
+    Export:
+      Name: !Sub '${AWS::StackName}-alb-arn'
+
+  # Security Group Information
+  ALBSecurityGroupId:
+    Description: 'Security Group ID for the ALB'
+    Value: !Ref ALBSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-alb-sg-id'
+
+  # Backend Configuration
+  BackendConfiguration:
+    Description: 'Current backend configuration'
+    Value: !Ref BackendType
+
+  # EC2 Outputs (conditional)
+  EC2InstanceId:
+    Condition: CreateEC2Resources
+    Description: 'Instance ID of the EC2 backend'
+    Value: !Ref EC2Instance
+    Export:
+      Name: !Sub '${AWS::StackName}-ec2-instance-id'
+
+  EC2TargetGroupArn:
+    Condition: CreateEC2Resources
+    Description: 'ARN of the EC2 Target Group'
+    Value: !Ref EC2TargetGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-ec2-tg-arn'
+
+  EC2AccessPath:
+    Condition: CreateBothBackends
+    Description: 'Path to access EC2 backend (when using both backends)'
+    Value: !Sub 'http://${ApplicationLoadBalancer.DNSName}/ec2'
+
+  # Lambda Outputs (conditional)
+  LambdaFunctionArn:
+    Condition: CreateLambdaResources
+    Description: 'ARN of the Lambda function'
+    Value: !GetAtt LambdaFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-lambda-arn'
+
+  LambdaTargetGroupArn:
+    Condition: CreateLambdaResources
+    Description: 'ARN of the Lambda Target Group'
+    Value: !Ref LambdaTargetGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-lambda-tg-arn'
+
+  LambdaAccessPath:
+    Condition: CreateBothBackends
+    Description: 'Path to access Lambda backend (when using both backends)'
+    Value: !Sub 'http://${ApplicationLoadBalancer.DNSName}/lambda'
+
+  # Usage Instructions
+  UsageInstructions:
+    Description: 'How to access your application'
+    Value: !If
+      - CreateBothBackends
+      - !Sub 'Access EC2 at http://${ApplicationLoadBalancer.DNSName}/ec2 and Lambda at http://${ApplicationLoadBalancer.DNSName}/lambda'
+      - !Sub 'Access your application at http://${ApplicationLoadBalancer.DNSName}'
