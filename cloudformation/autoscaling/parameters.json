@@ -1,14 +1,26 @@
 [
   {
     "ParameterKey": "InstanceType",
-    "ParameterValue": "t2.micro"
+    "ParameterValue": "t4g.micro"
   },
   {
-    "ParameterKey": "OperatorEMail",
-    "ParameterValue": "cgs.wong+gl@gmail.com"
+    "ParameterKey": "InstanceArchitecture",
+    "ParameterValue": "arm64"
   },
   {
-    "ParameterKey": "KeyName",
-    "ParameterValue": "gl-cloudkey-us-east-1"
+    "ParameterKey": "MinSize",
+    "ParameterValue": "1"
+  },
+  {
+    "ParameterKey": "MaxSize",
+    "ParameterValue": "3"
+  },
+  {
+    "ParameterKey": "DesiredCapacity",
+    "ParameterValue": "2"
+  },
+  {
+    "ParameterKey": "OperatorEmail",
+    "ParameterValue": "your-email@example.com"
   }
 ]
