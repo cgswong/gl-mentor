@@ -1,0 +1,31 @@
+---
+# cfn-lint configuration file
+# Used for linting CloudFormation templates
+
+# Ignore specific checks that may produce false positives
+ignore_checks:
+  - W3045 # Ignore warnings about hardcoded partition in ARN
+  - W2001 # Parameter not used (some parameters are optional)
+
+# Regions to validate against
+regions:
+  - us-east-1
+  - us-east-2
+  - us-west-1
+  - us-west-2
+  - eu-west-1
+  - eu-central-1
+
+# Rule-specific configuration
+configure_rules:
+  E3012:
+    strict: false
+  E3013:
+    strict: false
+  W2001:
+    # Allow unused parameters
+    exempt: true
+
+# Template file patterns
+include_experimental: false
+merge_configs: true

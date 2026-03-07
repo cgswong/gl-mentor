@@ -1,0 +1,57 @@
+{
+  "default": true,
+  "extends": "markdownlint/style/prettier",
+  "MD003": {
+    "style": "consistent"
+  },
+  "MD004": {
+    "style": "consistent"
+  },
+  "MD007": {
+    "indent": 2,
+    "start_indented": false
+  },
+  "MD013": {
+    "code_block_line_length": 120,
+    "code_blocks": true,
+    "heading_line_length": 120,
+    "headings": true,
+    "line_length": 120,
+    "stern": false
+  },
+  "MD024": {
+    "siblings_only": true
+  },
+  "MD025": {
+    "level": 1
+  },
+  "MD026": {
+    "punctuation": ".,;:!?"
+  },
+  "MD033": {
+    "allowed_elements": [
+      "br",
+      "img",
+      "code",
+      "a"
+    ]
+  },
+  "MD040": true,
+  "MD041": {
+    "level": 1
+  },
+  "MD042": true,
+  "MD043": false,
+  "MD044": {
+    "names": [
+      "AWS",
+      "EC2",
+      "CloudFormation",
+      "IAM",
+      "Session Manager",
+      "Systems Manager",
+      "IMDSv2",
+      "AL2023"
+    ]
+  }
+}

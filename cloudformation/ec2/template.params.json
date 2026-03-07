@@ -1,0 +1,4 @@
+{
+  "InstanceType": "t3.small",
+  "CidrAccess": "0.0.0.0/0"
+}
