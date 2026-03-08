@@ -1,7 +1,14 @@
 # Production-Ready VPC CloudFormation Template
 
 ## Overview
+
 This CloudFormation template creates a production-ready VPC with configurable features including IPAM support, optional NAT Gateway, VPC Flow Logs, and auto-calculated subnet CIDRs.
+
+## Architecture
+
+![VPC Architecture](./images/vpc-architecture.png)
+
+The diagram above illustrates the VPC architecture with public and private subnets across multiple availability zones, Internet Gateway, optional NAT Gateway, and VPC endpoints for S3 and DynamoDB.
 
 ## Features
 
@@ -17,18 +24,21 @@ This CloudFormation template creates a production-ready VPC with configurable fe
 ## Parameters
 
 ### Network Configuration
+
 - `VPCCidr`: CIDR block for VPC (default: 10.0.0.0/16)
 - `IPAMPoolId`: Optional IPAM Pool ID (supersedes VPCCidr)
 - `IPAMNetmaskLength`: Netmask length for IPAM allocation (default: 16)
 - `AdditionalCidr1-4`: Up to 4 additional CIDR blocks
 
 ### Subnet Configuration
+
 - `NumberOfAZs`: Number of AZs (2 or 3, default: 2)
 - `PublicSubnetBits`: Subnet size bits for public subnets (default: 8 = /24)
 - `PrivateSubnetBits`: Subnet size bits for private subnets (default: 8 = /24)
 - `AvailabilityZoneId1-3`: AZ IDs for subnet placement (e.g., use1-az1)
 
 ### Optional Features
+
 - `EnableNATGateway`: Enable NAT Gateway (no/yes, default: no)
 - `EnableVPCFlowLog`: Enable VPC Flow Logs (no/cloudwatch/s3, default: no)
 - `FlowLogS3BucketArn`: S3 bucket ARN for Flow Logs (if s3 enabled)
@@ -48,6 +58,7 @@ This CloudFormation template creates a production-ready VPC with configurable fe
 ## Usage Examples
 
 ### Basic 2-AZ VPC
+
 ```bash
 aws cloudformation create-stack \
   --stack-name my-vpc \
@@ -60,6 +71,7 @@ aws cloudformation create-stack \
 ```
 
 ### VPC with NAT Gateway and CloudWatch Flow Logs
+
 ```bash
 aws cloudformation create-stack \
   --stack-name my-vpc-nat \
@@ -76,6 +88,7 @@ aws cloudformation create-stack \
 ```
 
 ### IPAM-Allocated VPC with 3 AZs
+
 ```bash
 aws cloudformation create-stack \
   --stack-name my-vpc-ipam \
@@ -90,6 +103,7 @@ aws cloudformation create-stack \
 ```
 
 ### Using Parameter File
+
 ```bash
 aws cloudformation create-stack \
   --stack-name my-vpc \
@@ -101,11 +115,13 @@ aws cloudformation create-stack \
 ## Validation
 
 ### Lint Check
+
 ```bash
 cfn-lint template.cfn.yaml
 ```
 
 ### Validate Template
+
 ```bash
 aws cloudformation validate-template \
   --template-body file://template.cfn.yaml
