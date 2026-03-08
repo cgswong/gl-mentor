@@ -10,7 +10,7 @@ NC := \033[0m # No Color
 # Default configuration
 STACK_NAME ?= demo-ec2
 TEMPLATE_FILE ?= template.cfn.yaml
-PARAMETER_FILE ?= template.params.json
+PARAMETER_FILE ?= parameters.json
 REGION ?= us-east-1
 PROFILE ?= default
 CAPABILITIES ?= CAPABILITY_NAMED_IAM
