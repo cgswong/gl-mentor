@@ -1,0 +1,70 @@
+[
+  {
+    "ParameterKey": "VPCCidr",
+    "ParameterValue": "10.0.0.0/16"
+  },
+  {
+    "ParameterKey": "IPAMPoolId",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "IPAMNetmaskLength",
+    "ParameterValue": "16"
+  },
+  {
+    "ParameterKey": "AdditionalCidr1",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "AdditionalCidr2",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "AdditionalCidr3",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "AdditionalCidr4",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "NumberOfAZs",
+    "ParameterValue": "2"
+  },
+  {
+    "ParameterKey": "PublicSubnetBits",
+    "ParameterValue": "8"
+  },
+  {
+    "ParameterKey": "PrivateSubnetBits",
+    "ParameterValue": "8"
+  },
+  {
+    "ParameterKey": "AvailabilityZoneId1",
+    "ParameterValue": "use1-az1"
+  },
+  {
+    "ParameterKey": "AvailabilityZoneId2",
+    "ParameterValue": "use1-az2"
+  },
+  {
+    "ParameterKey": "AvailabilityZoneId3",
+    "ParameterValue": "use1-az4"
+  },
+  {
+    "ParameterKey": "EnableNATGateway",
+    "ParameterValue": "no"
+  },
+  {
+    "ParameterKey": "EnableVPCFlowLog",
+    "ParameterValue": "no"
+  },
+  {
+    "ParameterKey": "FlowLogS3BucketArn",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "FlowLogRetentionDays",
+    "ParameterValue": "7"
+  }
+]

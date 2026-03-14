@@ -20,6 +20,8 @@ This CloudFormation template creates an Application Load Balancer (ALB) with fle
 
 ## Architecture
 
+![ALB Architecture](./images/alb-architecture.png)
+
 ### EC2 Only Mode
 
 ```text

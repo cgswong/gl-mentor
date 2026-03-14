@@ -1,147 +1,231 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  Create an Amazon EC2 instance running the Amazon Linux AMI. The AMI is chosen based
-  on the published AWS list. This example creates an EC2 security group for the
-  instance to provide SSH access.
+  Modern EC2 instance deployment using Amazon Linux 2023 (AL2023). Features Session Manager
+  for secure instance access, managed IAM roles, and optimized instance types for cost-effective
+  application hosting. Instances are accessible via AWS Systems Manager Session Manager only.
 
-# Inputs for customization
+# Metadata for CloudFormation console UI organization
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Instance Configuration
+        Parameters:
+          - InstanceType
+          - CidrAccess
+    ParameterLabels:
+      InstanceType:
+        default: Instance Type
+      CidrAccess:
+        default: HTTP Access CIDR Range
+
+# Input parameters for customization
 Parameters:
-  KeyName:
-    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
-    Type: AWS::EC2::KeyPair::KeyName
-    ConstraintDescription: must be the name of an existing EC2 KeyPair.
   InstanceType:
-    Description: WebServer EC2 instance type
     Type: String
+    Description: >
+      EC2 instance type. Recommended: t3.small (x86_64) or t4g.small (ARM64) for cost-effective
+      workloads. t3/t4g offer best price/performance; m5/m7g for higher sustained load.
     Default: t3.small
     AllowedValues:
-      [
-        t2.nano,
-        t2.micro,
-        t2.small,
-        t3.nano,
-        t3.micro,
-        t3.small,
-        t3.medium,
-        t3.large,
-        t3.xlarge,
-        t3.2xlarge,
-        m5.large,
-        m5.xlarge,
-        m5.2xlarge,
-        m5.4xlarge,
-        c5.large,
-        c5.xlarge,
-        c5.2xlarge,
-        c5.4xlarge,
-        c5.9xlarge,
-        g3.8xlarge,
-        r5.large,
-        r5.xlarge,
-        r5.2xlarge,
-        r5.4xlarge,
-        i3.xlarge,
-        i3.2xlarge,
-        i3.4xlarge,
-        i3.8xlarge,
-        d2.xlarge,
-        d2.2xlarge,
-        d2.4xlarge,
-        d2.8xlarge,
-      ]
-    ConstraintDescription: must be a valid EC2 instance type.
-  SSHLocation:
-    Description: The IP address range that can be used to SSH to the EC2 instances
+      # General Purpose - x86_64 (Intel/AMD) - t3 Burstable
+      - t3.nano
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      # General Purpose - x86_64 (Intel/AMD) - m5 Balanced
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      # General Purpose - ARM64 (Graviton) - t4g Burstable
+      - t4g.nano
+      - t4g.micro
+      - t4g.small
+      - t4g.medium
+      - t4g.large
+      # General Purpose - ARM64 (Graviton3) - m7g Balanced
+      - m7g.medium
+      - m7g.large
+      - m7g.xlarge
+      - m7g.2xlarge
+    ConstraintDescription: Must be a valid EC2 instance type from the allowed list.
+
+  # Where to allow HTTP access.
+  CidrAccess:
     Type: String
+    Description: >
+      The IP address range that can be used to access the EC2 instances for HTTP (port 80).
+      Default is open to the world, but you can restrict it to your IP range for better security.
     MinLength: 9
     MaxLength: 18
     Default: 0.0.0.0/0
     AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
     ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
-  LatestAmiId:
-    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
-    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
 
-# Resources to be created
+# Conditions (top-level)
+Conditions:
+  IsArm: !Or
+    - !Equals [!Ref InstanceType, t4g.nano]
+    - !Equals [!Ref InstanceType, t4g.micro]
+    - !Equals [!Ref InstanceType, t4g.small]
+    - !Equals [!Ref InstanceType, t4g.medium]
+    - !Equals [!Ref InstanceType, t4g.large]
+    - !Equals [!Ref InstanceType, m7g.medium]
+    - !Equals [!Ref InstanceType, m7g.large]
+    - !Equals [!Ref InstanceType, m7g.xlarge]
+    - !Equals [!Ref InstanceType, m7g.2xlarge]
+
+# AWS resources to create
 Resources:
+  # IAM Role for EC2 instance to access AWS services securely
   EC2InstanceRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
+          # Allow EC2 service to assume this role
           - Effect: Allow
             Principal:
               Service:
                 - ec2.amazonaws.com
             Action:
-              - 'sts:AssumeRole'
-      Description: Allow EC2 access to AWS services
+              - sts:AssumeRole
+      Description: >
+        IAM role for EC2 instance permissions. Includes Session Manager access,
+        CloudWatch agent, and basic AWS service integrations.
       ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+        # Core Systems Manager permissions for Session Manager and SSM Agent
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        # CloudWatch Agent permissions for monitoring
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-instance-role'
 
+  # Instance profile to attach IAM role to EC2 instance
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
       Roles:
         - !Ref EC2InstanceRole
 
-  EC2Instance:
-    Type: AWS::EC2::Instance
-    Properties:
-      InstanceType: !Ref 'InstanceType'
-      SecurityGroups: [!Ref 'InstanceSecurityGroup']
-      KeyName: !Ref 'KeyName'
-      ImageId: !Ref 'LatestAmiId'
-      IamInstanceProfile: !Ref EC2InstanceProfile
-      Tags:
-        - Key: Name
-          Value: !Sub '${AWS::StackName}-ec2'
-      UserData:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          sudo yum -y update
-          sudo yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
-          sudo systemctl enable amazon-ssm-agent
-          sudo systemctl start amazon-ssm-agent
-
-          # Install Apache webserver
-          yum install -y httpd
-          service httpd start
-          chkconfig httpd on
-
-          # IMDSv2 token processing
-          TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
-          IP_ADDR=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -v http://169.254.169.254/latest/meta-data/public-ipv4)
-
-          echo "Manual instance with IP $IP_ADDR" > /var/www/html/index.html
-          echo "ok" > /var/www/html/health.html
-
+  # Security group for EC2 instance
   InstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Enable SSH access via port 22
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: !Ref 'SSHLocation'
+      GroupName: !Sub '${AWS::StackName}-sg'
+      GroupDescription: >
+        Security group for EC2 instance. Session Manager provides secure shell access without SSH.
+        Restrict inbound traffic to application needs only.
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-sg'
+  # HTTP ingress resource
+  InstanceSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !GetAtt InstanceSecurityGroup.GroupId
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: !Ref CidrAccess
+      Description: HTTP web server access
 
-# Useful outputs
+  # EC2 Instance
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      # Instance configuration
+      InstanceType: !Ref InstanceType
+      ImageId: !If [IsArm, !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64}}', !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}']
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+
+      # User data for initial instance setup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+
+          # Update system packages, using dnf on Amazon Linux 2023
+          dnf update -y
+
+          # Ensure SSM Agent is enabled (AL2023 usually includes SSM)
+          sudo systemctl enable --now amazon-ssm-agent || true
+
+          # Install and enable a simple HTTP server (httpd)
+          sudo dnf -y install httpd
+          sudo systemctl enable --now httpd
+
+          # IMDSv2 token processing (best practice)
+          TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600") || true
+          if [ -n "$TOKEN" ]; then
+            IP_ADDR=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4) || true
+          else
+            IP_ADDR=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4) || true
+          fi
+
+          echo "Instance started: $IP_ADDR" > /var/www/html/index.html
+          echo "200" > /var/www/html/health.html
+
+      # Tagging for cost allocation and resource management
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-instance'
+        - Key: application
+          Value: ApacheWebServer
+
+    # Wait for user data to complete
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT6M
+
+# Outputs for stack information and reference
 Outputs:
+  # Instance identification information
   InstanceId:
-    Description: InstanceId of the newly created EC2 instance
-    Value: !Ref 'EC2Instance'
-  AZ:
-    Description: Availability Zone of the newly created EC2 instance
-    Value: !GetAtt EC2Instance.AvailabilityZone
+    Description: EC2 Instance ID (use for Session Manager connections)
+    Value: !Ref EC2Instance
+    Export:
+      Name: !Sub '${AWS::StackName}-InstanceId'
+
+  # Network information
+  PrivateIP:
+    Description: Private IP address (internal VPC communication)
+    Value: !GetAtt EC2Instance.PrivateIp
+    Export:
+      Name: !Sub '${AWS::StackName}-PrivateIp'
+
   PublicDNS:
-    Description: Public DNSName of the newly created EC2 instance
+    Description: Public DNS name for HTTP access
     Value: !GetAtt EC2Instance.PublicDnsName
-  PublicIP:
-    Description: Public IP address of the newly created EC2 instance
-    Value: !GetAtt EC2Instance.PublicIp
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicDns'
+
+  # Security and access information
+  SecurityGroupId:
+    Description: Security Group ID for managing inbound/outbound rules
+    Value: !Ref InstanceSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityGroupId'
+
+  IAMRoleArn:
+    Description: ARN of IAM role attached to instance
+    Value: !GetAtt EC2InstanceRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RoleArn'
+
+  # Session Manager connection command
+  SessionManagerCommand:
+    Description: Command to connect via Session Manager (recommended approach)
+    Value: !Sub |
+      aws ssm start-session --target ${EC2Instance} --region ${AWS::Region}
+
+  WebServerURL:
+    Description: HTTP URL for web server running on instance
+    Value: !Sub 'http://${EC2Instance.PublicDnsName}'
