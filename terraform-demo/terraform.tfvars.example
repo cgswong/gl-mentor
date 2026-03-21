@@ -1,0 +1,9 @@
+# Example Terraform Variables file.
+# Copy this file to "terraform.tfvars" to apply these values locally.
+
+# The ID of the AMI to use for the EC2 instance.
+# Leave blank or commented out to use the latest Amazon Linux 2023 AMI.
+# ami_id = ""
+
+# The instance type to deploy.
+instance_type = "t3.small"
