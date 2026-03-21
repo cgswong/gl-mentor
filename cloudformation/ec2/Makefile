@@ -339,8 +339,9 @@ delete-policy:
 		--query 'Stacks[0].StackId' \
 		--output text 2>/dev/null) || true; \
 	if [ ! -z "$$STACK_ID" ]; then \
-		aws cloudformation delete-stack-policy \
+		aws cloudformation update-termination-protection \
 			--stack-name $(STACK_NAME) \
+			--no-enable-termination-protection \
 			--region $(REGION) \
 			--profile $(PROFILE) 2>/dev/null || true; \
 	fi

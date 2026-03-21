@@ -1,6 +1,6 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
-Description: >
+Description: >-
   Modern EC2 instance deployment using Amazon Linux 2023 (AL2023). Features Session Manager
   for secure instance access, managed IAM roles, and optimized instance types for cost-effective
   application hosting. Instances are accessible via AWS Systems Manager Session Manager only.
@@ -94,7 +94,7 @@ Resources:
                 - ec2.amazonaws.com
             Action:
               - sts:AssumeRole
-      Description: >
+      Description: >-
         IAM role for EC2 instance permissions. Includes Session Manager access,
         CloudWatch agent, and basic AWS service integrations.
       ManagedPolicyArns:
@@ -179,11 +179,6 @@ Resources:
           Value: !Sub '${AWS::StackName}-instance'
         - Key: application
           Value: ApacheWebServer
-
-    # Wait for user data to complete
-    CreationPolicy:
-      ResourceSignal:
-        Timeout: PT6M
 
 # Outputs for stack information and reference
 Outputs:
