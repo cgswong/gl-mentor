@@ -24,7 +24,7 @@ Metadata:
 Parameters:
   InstanceType:
     Type: String
-    Description: >
+    Description: >-
       EC2 instance type. Recommended: t3.small (x86_64) or t4g.small (ARM64) for cost-effective
       workloads. t3/t4g offer best price/performance; m5/m7g for higher sustained load.
     Default: t3.small
@@ -56,7 +56,7 @@ Parameters:
   # Where to allow HTTP access.
   CidrAccess:
     Type: String
-    Description: >
+    Description: >-
       The IP address range that can be used to access the EC2 instances for HTTP (port 80).
       Default is open to the world, but you can restrict it to your IP range for better security.
     MinLength: 9
@@ -118,7 +118,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupName: !Sub '${AWS::StackName}-sg'
-      GroupDescription: >
+      GroupDescription: >-
         Security group for EC2 instance. Session Manager provides secure shell access without SSH.
         Restrict inbound traffic to application needs only.
       Tags:
