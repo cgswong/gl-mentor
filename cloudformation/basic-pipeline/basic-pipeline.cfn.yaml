@@ -1,52 +1,11 @@
 AWSTemplateFormatVersion: '2010-09-09'
 
-Description: >
-  AWS CloudFormation Sample Template Continuous Delievery: This template
-  builds an AWS CodePipeline pipeline that implements a continuous delivery release
-  process for AWS CloudFormation stacks. Submit a CloudFormation source artifact
-  to an Amazon S3 location before building the pipeline. The pipeline uses the
-  artifact to automatically create stacks and change sets.
-  **WARNING** This template creates an Amazon EC2 instance. You will be billed
-  for the AWS resources used when you create a stack using this template.
-
-Parameters:
-  PipelineName:
-    Description: A name for pipeline
-    Type: String
-  S3Bucket:
-    Description: The name of the S3 bucket that contains the source artifact, which must be in the same region as this stack
-    Type: String
-  SourceS3Key:
-    Default: wordpress-single-instance.zip
-    Description: The file name of the source artifact, such as myfolder/myartifact.zip
-    Type: String
-  TemplateFileName:
-    Default: wordpress-single-instance.yaml
-    Description: The file name of the WordPress template
-    Type: String
-  TestStackName:
-    Default: Test-MyWordPressSite
-    Description: A name for the test WordPress stack
-    Type: String
-  TestStackConfig:
-    Default: test-stack-configuration.json
-    Description: The configuration file name for the test WordPress stack
-    Type: String
-  ProdStackName:
-    Default: Prod-MyWordPressSite
-    Description: A name for the production WordPress stack
-    Type: String
-  ProdStackConfig:
-    Default: prod-stack-configuration.json
-    Description: The configuration file name for the production WordPress stack
-    Type: String
-  ChangeSetName:
-    Default: UpdatePreview-MyWordPressSite
-    Description: A name for the production WordPress stack change set
-    Type: String
-  Email:
-    Description: The email address where CodePipeline sends pipeline notifications
-    Type: String
+Description: >-
+  AWS CloudFormation CI/CD Pipeline Template: This template provisions an AWS CodePipeline 
+  to implement a continuous delivery release process for AWS CloudFormation stacks. 
+  It creates an S3 Bucket for artifacts, an SNS Topic for manual approval notifications, 
+  and the CodePipeline itself. An EventBridge rule automatically triggers the pipeline 
+  when a new artifact is uploaded to the specified S3 source location.
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -55,29 +14,81 @@ Metadata:
           default: 'CodePipeline Settings'
         Parameters:
           - PipelineName
-          - S3Bucket
-          - SourceS3Key
+          - ArtifactBucketName
+          - ArtifactObjectKey
           - Email
       - Label:
           default: 'Test Stack Settings'
         Parameters:
           - TestStackName
-          - TemplateFileName
-          - TestStackConfig
+          - TargetTemplateFileName
+          - TestStackConfigurationFileName
       - Label:
           default: 'Production Stack Settings'
         Parameters:
-          - ChangeSetName
           - ProdStackName
-          - ProdStackConfig
+          - ChangeSetName
+          - ProdStackConfigurationFileName
+
+Parameters:
+  PipelineName:
+    Description: 'A name for the CodePipeline'
+    Type: String
+  ArtifactBucketName:
+    Description: 'The name of the S3 bucket that contains the source artifact (must be in the same region as this stack).'
+    Type: String
+  ArtifactObjectKey:
+    Description: 'The object key (file name) of the source artifact zip in the S3 bucket, e.g., myfolder/myartifact.zip.'
+    Type: String
+  TargetTemplateFileName:
+    Description: 'The file name of the primary CloudFormation template inside the source artifact zip.'
+    Type: String
+  TestStackName:
+    Default: CFN-Stack-test
+    Description: 'A name for the test CloudFormation stack.'
+    Type: String
+  TestStackConfigurationFileName:
+    Default: configuration-dev.json
+    Description: 'The template configuration file name for the test stack (JSON format) located inside the source artifact.'
+    Type: String
+  ProdStackName:
+    Default: CFN-Stack-prod
+    Description: 'A name for the production CloudFormation stack.'
+    Type: String
+  ProdStackConfigurationFileName:
+    Default: configuration-prod.json
+    Description: 'The template configuration file name for the production stack (JSON format) located inside the source artifact.'
+    Type: String
+  ChangeSetName:
+    Default: UpdatePreview-CFN-Stack
+    Description: 'A name for the initial change set created against the production stack.'
+    Type: String
+  Email:
+    Description: 'The email address where CodePipeline sends manual approval notifications.'
+    Type: String
 
 Resources:
+  # -----------------------------------------------------------------------------
+  # S3 Artifact Store
+  # -----------------------------------------------------------------------------
   ArtifactStoreBucket:
     Type: AWS::S3::Bucket
     Properties:
       VersioningConfiguration:
         Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
 
+  # -----------------------------------------------------------------------------
+  # SNS Topic for pipeline approval stages
+  # -----------------------------------------------------------------------------
   CodePipelineSNSTopic:
     Type: AWS::SNS::Topic
     Properties:
@@ -85,6 +96,57 @@ Resources:
         - Endpoint: !Ref Email
           Protocol: email
 
+  # -----------------------------------------------------------------------------
+  # EventBridge Rule to trigger the pipeline instead of S3 polling
+  # Note: Requires AWS CloudTrail to be enabled for S3 Object level API activity
+  # -----------------------------------------------------------------------------
+  PipelineTriggerRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Trigger CodePipeline when source artifact is uploaded to S3
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - "AWS API Call via CloudTrail"
+        detail:
+          eventSource:
+            - s3.amazonaws.com
+          eventName:
+            - PutObject
+            - CompleteMultipartUpload
+            - CopyObject
+          requestParameters:
+            bucketName:
+              - !Ref ArtifactBucketName
+            key:
+              - !Ref ArtifactObjectKey
+      State: ENABLED
+      Targets:
+        - Arn: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${PipelineName}"
+          Id: TargetPipeline
+          RoleArn: !GetAtt EventBridgeRole.Arn
+
+  EventBridgeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: ['sts:AssumeRole']
+            Effect: Allow
+            Principal:
+              Service: [events.amazonaws.com]
+      Policies:
+        - PolicyName: EventBridgeInvokePipeline
+          PolicyDocument:
+            Statement:
+              - Action: ['codepipeline:StartPipelineExecution']
+                Effect: Allow
+                Resource: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${PipelineName}"
+
+  # -----------------------------------------------------------------------------
+  # CodePipeline
+  # -----------------------------------------------------------------------------
   Pipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
@@ -93,7 +155,7 @@ Resources:
         Type: S3
       DisableInboundStageTransitions: []
       Name: !Ref 'PipelineName'
-      RoleArn: !GetAtt [PipelineRole, Arn]
+      RoleArn: !GetAtt PipelineRole.Arn
       Stages:
         - Name: S3Source
           Actions:
@@ -104,11 +166,12 @@ Resources:
                 Provider: S3
                 Version: '1'
               Configuration:
-                S3Bucket: !Ref 'S3Bucket'
-                S3ObjectKey: !Ref 'SourceS3Key'
+                S3Bucket: !Ref 'ArtifactBucketName'
+                S3ObjectKey: !Ref 'ArtifactObjectKey'
+                PollForSourceChanges: false # Required when using EventBridge
               OutputArtifacts:
                 - Name: TemplateSource
-              RunOrder: '1'
+              RunOrder: 1
         - Name: TestStage
           Actions:
             - Name: CreateStack
@@ -121,11 +184,11 @@ Resources:
                 - Name: TemplateSource
               Configuration:
                 ActionMode: REPLACE_ON_FAILURE
-                RoleArn: !GetAtt [CFNRole, Arn]
+                RoleArn: !GetAtt CFNRole.Arn
                 StackName: !Ref TestStackName
-                TemplateConfiguration: !Sub 'TemplateSource::${TestStackConfig}'
-                TemplatePath: !Sub 'TemplateSource::${TemplateFileName}'
-              RunOrder: '1'
+                TemplateConfiguration: !Sub 'TemplateSource::${TestStackConfigurationFileName}'
+                TemplatePath: !Sub 'TemplateSource::${TargetTemplateFileName}'
+              RunOrder: 1
             - Name: ApproveTestStack
               ActionTypeId:
                 Category: Approval
@@ -134,8 +197,8 @@ Resources:
                 Version: '1'
               Configuration:
                 NotificationArn: !Ref CodePipelineSNSTopic
-                CustomData: !Sub 'Do you want to create a change set against the production stack and delete the ${TestStackName} stack?'
-              RunOrder: '2'
+                CustomData: !Sub 'Review the test stack ${TestStackName}. Do you want to create a change set against the production stack and delete the test stack?'
+              RunOrder: 2
             - Name: DeleteTestStack
               ActionTypeId:
                 Category: Deploy
@@ -144,9 +207,9 @@ Resources:
                 Version: '1'
               Configuration:
                 ActionMode: DELETE_ONLY
-                RoleArn: !GetAtt [CFNRole, Arn]
+                RoleArn: !GetAtt CFNRole.Arn
                 StackName: !Ref TestStackName
-              RunOrder: '3'
+              RunOrder: 3
         - Name: ProdStage
           Actions:
             - Name: CreateChangeSet
@@ -159,12 +222,12 @@ Resources:
                 - Name: TemplateSource
               Configuration:
                 ActionMode: CHANGE_SET_REPLACE
-                RoleArn: !GetAtt [CFNRole, Arn]
+                RoleArn: !GetAtt CFNRole.Arn
                 StackName: !Ref ProdStackName
                 ChangeSetName: !Ref ChangeSetName
-                TemplateConfiguration: !Sub 'TemplateSource::${ProdStackConfig}'
-                TemplatePath: !Sub 'TemplateSource::${TemplateFileName}'
-              RunOrder: '1'
+                TemplateConfiguration: !Sub 'TemplateSource::${ProdStackConfigurationFileName}'
+                TemplatePath: !Sub 'TemplateSource::${TargetTemplateFileName}'
+              RunOrder: 1
             - Name: ApproveChangeSet
               ActionTypeId:
                 Category: Approval
@@ -174,7 +237,7 @@ Resources:
               Configuration:
                 NotificationArn: !Ref CodePipelineSNSTopic
                 CustomData: !Sub 'A new change set was created for the ${ProdStackName} stack. Do you want to implement the changes?'
-              RunOrder: '2'
+              RunOrder: 2
             - Name: ExecuteChangeSet
               ActionTypeId:
                 Category: Deploy
@@ -184,27 +247,34 @@ Resources:
               Configuration:
                 ActionMode: CHANGE_SET_EXECUTE
                 ChangeSetName: !Ref ChangeSetName
-                RoleArn: !GetAtt [CFNRole, Arn]
+                RoleArn: !GetAtt CFNRole.Arn
                 StackName: !Ref ProdStackName
-              RunOrder: '3'
+              RunOrder: 3
+
+  # -----------------------------------------------------------------------------
+  # IAM Roles
+  # -----------------------------------------------------------------------------
   CFNRole:
     Type: AWS::IAM::Role
     Properties:
+      Description: AWS CloudFormation Execution Role to deploy target stacks
       AssumeRolePolicyDocument:
         Statement:
           - Action: ['sts:AssumeRole']
             Effect: Allow
             Principal:
               Service: [cloudformation.amazonaws.com]
-        Version: '2012-10-17'
-      Path: /
       Policies:
-        - PolicyName: CloudFormationRole
+        - PolicyName: CloudFormationTargetDeployRole
           PolicyDocument:
-            Version: '2012-10-17'
             Statement:
+              # Note for Users: Replace this generic policy with the specific 
+              # least-privilege actions required by your target templates. 
+              # For example, if deploying only EC2 and VPC resources and S3:
               - Action:
                   - 'ec2:*'
+                  - 's3:*'
+                  - 'iam:PassRole'
                 Effect: Allow
                 Resource: '*'
 
@@ -213,29 +283,66 @@ Resources:
     Properties:
       AssumeRolePolicyDocument:
         Statement:
-          - Action: ['sts:AssumeRole']
+          - Sid: 'TrustCodePipeline'
+            Action: ['sts:AssumeRole']
             Effect: Allow
             Principal:
               Service: [codepipeline.amazonaws.com]
-        Version: '2012-10-17'
-      Path: /
       Policies:
-        - PolicyName: CodePipelineAccess
+        - PolicyName: CodePipelineBasicAccess
           PolicyDocument:
-            Version: '2012-10-17'
             Statement:
-              - Action:
-                  - 's3:*'
-                  - 'cloudformation:CreateStack'
-                  - 'cloudformation:DescribeStacks'
-                  - 'cloudformation:DeleteStack'
-                  - 'cloudformation:UpdateStack'
-                  - 'cloudformation:CreateChangeSet'
-                  - 'cloudformation:ExecuteChangeSet'
-                  - 'cloudformation:DeleteChangeSet'
-                  - 'cloudformation:DescribeChangeSet'
-                  - 'cloudformation:SetStackPolicy'
-                  - 'iam:PassRole'
+              - Sid: 'S3Access'
+                Action:
+                  - 's3:GetBucketVersioning'
+                  - 's3:GetObject'
+                  - 's3:GetObjectVersion'
+                  - 's3:PutObject'
+                  - 's3:PutObjectAcl'
+                Effect: Allow
+                Resource:
+                  - !GetAtt ArtifactStoreBucket.Arn
+                  - !Sub "${ArtifactStoreBucket.Arn}/*"
+                  - !Sub "arn:${AWS::Partition}:s3:::${ArtifactBucketName}"
+                  - !Sub "arn:${AWS::Partition}:s3:::${ArtifactBucketName}/*"
+              - Sid: 'SNSPublish'
+                Action:
                   - 'sns:Publish'
                 Effect: Allow
-                Resource: '*'
+                Resource: !Ref CodePipelineSNSTopic
+              - Sid: 'CloudFormationAccess'
+                Action:
+                  - 'cloudformation:CreateChangeSet'
+                  - 'cloudformation:CreateStack'
+                  - 'cloudformation:DeleteChangeSet'
+                  - 'cloudformation:DeleteStack'
+                  - 'cloudformation:DescribeChangeSet'
+                  - 'cloudformation:DescribeStacks'
+                  - 'cloudformation:ExecuteChangeSet'
+                  - 'cloudformation:SetStackPolicy'
+                  - 'cloudformation:UpdateStack'
+                Effect: Allow
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProdStackName}"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProdStackName}/*"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${TestStackName}"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${TestStackName}/*"
+              - Sid: 'PassRole'
+                Action:
+                  - 'iam:PassRole'
+                Effect: Allow
+                Resource: !GetAtt CFNRole.Arn
+
+# -----------------------------------------------------------------------------
+# Outputs
+# -----------------------------------------------------------------------------
+Outputs:
+  PipelineUrl:
+    Description: 'URL of the created CodePipeline'
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/codesuite/codepipeline/pipelines/${PipelineName}/view"
+  ArtifactBucketName:
+    Description: 'Name of the provisioned S3 bucket acting as the artifact store'
+    Value: !Ref ArtifactStoreBucket
+  ApprovalTopicArn:
+    Description: 'SNS Topic ARN for manual approval notifications'
+    Value: !Ref CodePipelineSNSTopic
