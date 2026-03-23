@@ -1,0 +1,13 @@
+{
+  "Parameters": {
+    "PipelineName": "VPC-pipeline",
+    "ArtifactBucketName": "cloudformation-artifacts-073995604235-us-east-1",
+    "ArtifactObjectKey": "demo-vpc/demo-vpc.zip",
+    "Email": "cgs.wong+demo@gmail.com",
+    "TestStackName": "demo-vpc-test",
+    "TestStackConfigurationFileName": "demo-vpc-config-test.json",
+    "ProdStackName": "demo-vpc-prod",
+    "ProdStackConfigurationFileName": "demo-vpc-config-prod.json",
+    "ChangeSetName": "demo-vpc-prod-changeset"
+  }
+}
