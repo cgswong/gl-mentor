@@ -7,13 +7,10 @@ Parameters:
     Type: String
     Default: t3.small
     AllowedValues:
-      - t2.small
-      - t2.medium
-      - t2.large
-      - t3.micro
       - t3.small
       - t3.medium
       - t3.large
+      - t3.xlarge
     ConstraintDescription: Must be a valid EC2 instance type.
 
   UbuntuAMI:
@@ -85,7 +82,6 @@ Resources:
           CidrIp: !Ref IngressCIDR
           Description: !Sub 'Express app from ${IngressCIDR}'
 
-  # amazonq-ignore-next-line
   DockerInstance:
     Type: 'AWS::EC2::Instance'
     Properties:
