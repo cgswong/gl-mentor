@@ -1,8 +1,10 @@
 # Terraform AWS Demo Architecture
+
 This module demonstrates Terraform basics for a class.
 It provisions an event-driven architecture using CloudWatch Events, SNS, and Lambda.
 
 ## Architecture
+
 - **CloudWatch Event Rule**: Detects AWS Console Sign In via CloudTrail.
 - **SNS Topic**: Receives events from CloudWatch and fans them out.
 - **Lambda Function**: Subscribed to the SNS topic to process events.
